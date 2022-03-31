@@ -153,18 +153,17 @@ analyzing CPU 0:
    I ran the command a couple of more times and got various results while the core was *idle*:
    1.65GHz, 1.56GHz, 1.31GHz, 1.12GHz. It looks like the CPU does what it wants.
 
-   From some source I can't remember now I remember that sampling
-   frequency once will not give precise results. You need to sample it
-   a couple of times and run some statistics to get meaningful
-   results.
+   Sampling frequency once will not give precise results. You need to
+   sample it a couple of times and run some statistics to get
+   meaningful results. Let's see what happens under load.
 
 2. Frequency is actually pretty stable
 
    During the benchmark I ran =while sleep 2; do cpupower monitor;
    done= to monitor whether core 0 frequency is actually around 1GHz. I got something like that:
    #+begin_example
-    | Nehalem                    || Mperf               || Idle_Stats
- CPU| C3   | C6   | PC3  | PC6   || C0   | Cx   | Freq  || POLL | C1_A | C2_A | C3_A
+    | Nehalem                   || Mperf              || Idle_Stats
+ CPU| C3   | C6   | PC3  | PC6  || C0   | Cx   | Freq || POLL | C1_A | C2_A | C3_A
    0|  0.00|  0.00|  0.00|  0.00|| 99.60|  0.40|  1014||  0.00|  0.00|  0.00|  0.00
    1|  0.00|  0.00|  0.00|  0.00||  0.60| 99.40|  2331||  0.00|  0.04|  7.08| 92.26
    2|  0.00|  0.00|  0.00|  0.00||  0.30| 99.70|   855||  0.00|  0.04|  0.21| 99.46
@@ -180,9 +179,9 @@ analyzing CPU 0:
    An interesting detail is that core #1 is clocking at over
    2GHz. We've got hyperthreading so core #0 is tied to core #1. It
    might be that frequency scaler sees that there's a high demand on
-   CPU power and ramps up the CPU speed, but core #0 has a very
-   limited speed.  Note that thread #0 is busy and thread #1 is idle
-   (C0 means "busy", Cx means "idle", as per [[https://github.com/torvalds/linux/blob/d888c83fcec75194a8a48ccd283953bdba7b2550/tools/power/cpupower/utils/idle_monitor/mperf_monitor.c#L38-L61=][linux source code]]).
+   CPU power and ramps up the CPU speed, but core #0 has a limited
+   speed. Note that thread #0 is busy and thread #1 is idle (C0 means
+   "busy", Cx means "idle", as per [[https://github.com/torvalds/linux/blob/d888c83fcec75194a8a48ccd283953bdba7b2550/tools/power/cpupower/utils/idle_monitor/mperf_monitor.c#L38-L61=][linux source code]]).
 
 3. # of NOPs / time
 
@@ -198,7 +197,7 @@ it looks like we clocked on average a little over 1GHz and indeed we can still r
 
 So indeed, two conclusions in the previous benchmaks proved to be true!
 
-* Bonus bogomips
+* Bonus: bogomips
 The Linux Kernel exports 'bogomips' through /proc/cpuinfo
 #+NAME: get bogomips
 #+begin_src sh :results verbatim

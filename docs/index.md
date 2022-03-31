@@ -2,5 +2,5 @@
 
 ## Benchmarking
 
- - [estimating cpu clock speed by running NOPs](benchmarks/nop)
+ - [Measuring CPU clock speed with NOPs and time(1)](benchmarks/nop)
  - tbc
