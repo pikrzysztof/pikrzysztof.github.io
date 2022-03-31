@@ -1,0 +1,571 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2022-03-30 śro 18:34 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Measuring CPU clock speed with NOPs and time(1)</title>
+<meta name="author" content="Krzysztof Piecuch" />
+<meta name="generator" content="Org Mode" />
+<style>
+  #content { max-width: 60em; margin: auto; }
+  .title  { text-align: center;
+             margin-bottom: .2em; }
+  .subtitle { text-align: center;
+              font-size: medium;
+              font-weight: bold;
+              margin-top:0; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { font-family: monospace; color: green; }
+  .priority { font-family: monospace; color: orange; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .org-right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .org-left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .org-center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #e6e6e6;
+    border-radius: 3px;
+    background-color: #f2f2f2;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: auto;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    top: -8px;
+    right: 12px;
+    padding: 3px;
+    color: #555;
+    background-color: #f2f2f299;
+  }
+  pre.src:hover:before { display: inline; margin-top: 14px;}
+  /* Languages per Org manual */
+  pre.src-asymptote:before { content: 'Asymptote'; }
+  pre.src-awk:before { content: 'Awk'; }
+  pre.src-authinfo::before { content: 'Authinfo'; }
+  pre.src-C:before { content: 'C'; }
+  /* pre.src-C++ doesn't work in CSS */
+  pre.src-clojure:before { content: 'Clojure'; }
+  pre.src-css:before { content: 'CSS'; }
+  pre.src-D:before { content: 'D'; }
+  pre.src-ditaa:before { content: 'ditaa'; }
+  pre.src-dot:before { content: 'Graphviz'; }
+  pre.src-calc:before { content: 'Emacs Calc'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-fortran:before { content: 'Fortran'; }
+  pre.src-gnuplot:before { content: 'gnuplot'; }
+  pre.src-haskell:before { content: 'Haskell'; }
+  pre.src-hledger:before { content: 'hledger'; }
+  pre.src-java:before { content: 'Java'; }
+  pre.src-js:before { content: 'Javascript'; }
+  pre.src-latex:before { content: 'LaTeX'; }
+  pre.src-ledger:before { content: 'Ledger'; }
+  pre.src-lisp:before { content: 'Lisp'; }
+  pre.src-lilypond:before { content: 'Lilypond'; }
+  pre.src-lua:before { content: 'Lua'; }
+  pre.src-matlab:before { content: 'MATLAB'; }
+  pre.src-mscgen:before { content: 'Mscgen'; }
+  pre.src-ocaml:before { content: 'Objective Caml'; }
+  pre.src-octave:before { content: 'Octave'; }
+  pre.src-org:before { content: 'Org mode'; }
+  pre.src-oz:before { content: 'OZ'; }
+  pre.src-plantuml:before { content: 'Plantuml'; }
+  pre.src-processing:before { content: 'Processing.js'; }
+  pre.src-python:before { content: 'Python'; }
+  pre.src-R:before { content: 'R'; }
+  pre.src-ruby:before { content: 'Ruby'; }
+  pre.src-sass:before { content: 'Sass'; }
+  pre.src-scheme:before { content: 'Scheme'; }
+  pre.src-screen:before { content: 'Gnu Screen'; }
+  pre.src-sed:before { content: 'Sed'; }
+  pre.src-sh:before { content: 'shell'; }
+  pre.src-sql:before { content: 'SQL'; }
+  pre.src-sqlite:before { content: 'SQLite'; }
+  /* additional languages in org.el's org-babel-load-languages alist */
+  pre.src-forth:before { content: 'Forth'; }
+  pre.src-io:before { content: 'IO'; }
+  pre.src-J:before { content: 'J'; }
+  pre.src-makefile:before { content: 'Makefile'; }
+  pre.src-maxima:before { content: 'Maxima'; }
+  pre.src-perl:before { content: 'Perl'; }
+  pre.src-picolisp:before { content: 'Pico Lisp'; }
+  pre.src-scala:before { content: 'Scala'; }
+  pre.src-shell:before { content: 'Shell Script'; }
+  pre.src-ebnf2ps:before { content: 'ebfn2ps'; }
+  /* additional language identifiers per "defun org-babel-execute"
+       in ob-*.el */
+  pre.src-cpp:before  { content: 'C++'; }
+  pre.src-abc:before  { content: 'ABC'; }
+  pre.src-coq:before  { content: 'Coq'; }
+  pre.src-groovy:before  { content: 'Groovy'; }
+  /* additional language identifiers from org-babel-shell-names in
+     ob-shell.el: ob-shell is the only babel language using a lambda to put
+     the execution function name together. */
+  pre.src-bash:before  { content: 'bash'; }
+  pre.src-csh:before  { content: 'csh'; }
+  pre.src-ash:before  { content: 'ash'; }
+  pre.src-dash:before  { content: 'dash'; }
+  pre.src-ksh:before  { content: 'ksh'; }
+  pre.src-mksh:before  { content: 'mksh'; }
+  pre.src-posh:before  { content: 'posh'; }
+  /* Additional Emacs modes also supported by the LaTeX listings package */
+  pre.src-ada:before { content: 'Ada'; }
+  pre.src-asm:before { content: 'Assembler'; }
+  pre.src-caml:before { content: 'Caml'; }
+  pre.src-delphi:before { content: 'Delphi'; }
+  pre.src-html:before { content: 'HTML'; }
+  pre.src-idl:before { content: 'IDL'; }
+  pre.src-mercury:before { content: 'Mercury'; }
+  pre.src-metapost:before { content: 'MetaPost'; }
+  pre.src-modula-2:before { content: 'Modula-2'; }
+  pre.src-pascal:before { content: 'Pascal'; }
+  pre.src-ps:before { content: 'PostScript'; }
+  pre.src-prolog:before { content: 'Prolog'; }
+  pre.src-simula:before { content: 'Simula'; }
+  pre.src-tcl:before { content: 'tcl'; }
+  pre.src-tex:before { content: 'TeX'; }
+  pre.src-plain-tex:before { content: 'Plain TeX'; }
+  pre.src-verilog:before { content: 'Verilog'; }
+  pre.src-vhdl:before { content: 'VHDL'; }
+  pre.src-xml:before { content: 'XML'; }
+  pre.src-nxml:before { content: 'XML'; }
+  /* add a generic configuration mode; LaTeX export needs an additional
+     (add-to-list 'org-latex-listings-langs '(conf " ")) in .emacs */
+  pre.src-conf:before { content: 'Configuration File'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.org-right  { text-align: center;  }
+  th.org-left   { text-align: center;   }
+  th.org-center { text-align: center; }
+  td.org-right  { text-align: right;  }
+  td.org-left   { text-align: left;   }
+  td.org-center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara { display: inline; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .equation-container {
+    display: table;
+    text-align: center;
+    width: 100%;
+  }
+  .equation {
+    vertical-align: middle;
+  }
+  .equation-label {
+    display: table-cell;
+    text-align: right;
+    vertical-align: middle;
+  }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  .org-svg { width: 90%; }
+</style>
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Measuring CPU clock speed with NOPs and time(1)</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org4b41e6c">1. Introduction</a></li>
+<li><a href="#org82c0aea">2. Benchmark</a>
+<ul>
+<li><a href="#org13d0d5f">2.1. Code</a></li>
+<li><a href="#org2935269">2.2. Running it freely</a>
+<ul>
+<li><a href="#org349a218">2.2.1. Results analysis:</a></li>
+<li><a href="#org4df2ed9">2.2.2. Conclusions:</a></li>
+</ul>
+</li>
+<li><a href="#org6022105">2.3. Running it at fixed 1GHz speed</a>
+<ul>
+<li><a href="#orgb29785d">2.3.1. Result analysis</a></li>
+<li><a href="#org089527a">2.3.2. Conclusions</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org4b41e6c" class="outline-2">
+<h2 id="org4b41e6c"><span class="section-number-2">1.</span> Introduction</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+<a href="https://brendangregg.com/blog/2014-04-26/the-noploop-cpu-benchmark.html">Brendan Gregg published</a> a simple CPU benchmark for checking your cpu speed. I decided to give it a go and see for myself. Even for a simple thing like that it turned out a little different than I expected.
+</p>
+</div>
+</div>
+<div id="outline-container-org82c0aea" class="outline-2">
+<h2 id="org82c0aea"><span class="section-number-2">2.</span> Benchmark</h2>
+<div class="outline-text-2" id="text-2">
+</div>
+<div id="outline-container-org13d0d5f" class="outline-3">
+<h3 id="org13d0d5f"><span class="section-number-3">2.1.</span> Code</h3>
+<div class="outline-text-3" id="text-2-1">
+<p>
+Instead of writing C-code and then editing asm/binary I opted for writing my own assembly. I don't need to lookup gcc flags or read through the boilerplate generated by GCC.
+</p>
+
+<p>
+I prefer Intel asm syntax over AT&amp;T, I think Intel is more readable for humans.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-asm" id="orgcb5c7d7"><span style="color: #cae682;">section</span> .text
+<span style="color: #cae682;">global</span> _start
+<span style="color: #cae682;">SYS_EXIT</span> <span style="color: #8ac6f2; font-weight: bold;">equ</span> 1
+<span style="color: #cae682;">ARG</span> <span style="color: #8ac6f2; font-weight: bold;">equ</span> 1048576000
+
+<span style="color: #cae682;">_start</span>:
+        <span style="color: #8ac6f2; font-weight: bold;">mov</span> eax, ARG   <span style="color: #99968b;">; </span><span style="color: #99968b;">store the number of loops in the register</span>
+<span style="color: #cae682;">loop</span>:   <span style="color: #8ac6f2; font-weight: bold;">nop</span>            <span style="color: #99968b;">; </span><span style="color: #99968b;">do nothing, burn cycles</span>
+        <span style="color: #8ac6f2; font-weight: bold;">nop</span>
+        <span style="color: #8ac6f2; font-weight: bold;">nop</span>
+<span style="color: #99968b;">;       </span><span style="color: #99968b;">&lt;snip&gt;  ;total of 2048 NOPs</span>
+        <span style="color: #8ac6f2; font-weight: bold;">nop</span>
+        <span style="color: #8ac6f2; font-weight: bold;">add</span> eax, -1     <span style="color: #99968b;">; </span><span style="color: #99968b;">subtract 1 from loop counter</span>
+        <span style="color: #8ac6f2; font-weight: bold;">cmp</span> eax, 0      <span style="color: #99968b;">; </span><span style="color: #99968b;">test if loop counter is 0</span>
+        <span style="color: #8ac6f2; font-weight: bold;">jne</span> loop        <span style="color: #99968b;">; </span><span style="color: #99968b;">go back to the nops if not finished</span>
+<span style="color: #cae682;">end</span>:    <span style="color: #8ac6f2; font-weight: bold;">mov</span> eax, SYS_EXIT       <span style="color: #99968b;">; </span><span style="color: #99968b;">we want exit(2)</span>
+        <span style="color: #8ac6f2; font-weight: bold;">int</span> 0x80                <span style="color: #99968b;">; </span><span style="color: #99968b;">we want it now</span>
+</pre>
+</div>
+<p>
+Compiling and linking it:
+</p>
+<div class="org-src-container">
+<pre class="src src-bash" id="orgdcab9d8">nasm -f elf64 main.asm
+ld -o main main.o
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org2935269" class="outline-3">
+<h3 id="org2935269"><span class="section-number-3">2.2.</span> Running it freely</h3>
+<div class="outline-text-3" id="text-2-2">
+<p>
+I used taskset to ensure my workload won't get moved to a different CPU. I want to benchmark one core, have hot caches. Moving the task across CPUs could introduce cache misses or reduce core temperature. I imagine running on core #1 for a while could heat it up, which would result in core frequency reduction. This may cause the kernel to move move the workload to faster core #2, wait a bit, move to core #3 etc&#x2026;
+</p>
+<div class="org-src-container">
+<pre class="src src-bash" id="org6c0b758">taskset 1 time ./main 2&gt;&amp;1
+</pre>
+</div>
+
+<pre class="example" id="orgfaa797c">
+115.34user 0.00system 1:55.36elapsed 99%CPU (0avgtext+0avgdata 300maxresident)k
+0inputs+0outputs (0major+14minor)pagefaults 0swaps
+</pre>
+</div>
+
+
+<div id="outline-container-org349a218" class="outline-4">
+<h4 id="org349a218"><span class="section-number-4">2.2.1.</span> Results analysis:</h4>
+<div class="outline-text-4" id="text-2-2-1">
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">What</th>
+<th scope="col" class="org-left">How to calculate</th>
+<th scope="col" class="org-right">Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Instructions</td>
+<td class="org-left">2048 * 1048576000</td>
+<td class="org-right">2147483648000</td>
+</tr>
+
+<tr>
+<td class="org-left">Time[s]</td>
+<td class="org-left">time(1)</td>
+<td class="org-right">115.34</td>
+</tr>
+
+<tr>
+<td class="org-left">NOPs/s/4</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-right">4654681000</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+How does that compare to my CPU?
+</p>
+
+<div class="org-src-container">
+<pre class="src src-bash" id="org26dd86d">head /proc/cpuinfo
+cpupower -c 0 frequency-info
+</pre>
+</div>
+
+<pre class="example" id="org4b939e4">
+processor	: 0
+vendor_id	: GenuineIntel
+cpu family	: 6
+model		: 140
+model name	: 11th Gen Intel(R) Core(TM) i7-1165G7 @ 2.80GHz
+stepping	: 1
+microcode	: 0x9a
+cpu MHz		: 2800.000
+cache size	: 12288 KB
+physical id	: 0
+analyzing CPU 0:
+  driver: intel_pstate
+  CPUs which run at the same hardware frequency: 0
+  CPUs which need to have their frequency coordinated by software: 0
+  maximum transition latency:  Cannot determine or is not supported.
+  hardware limits: 400 MHz - 4.70 GHz
+  available cpufreq governors: performance powersave
+  current policy: frequency should be within 400 MHz and 4.70 GHz.
+                  The governor "performance" may decide which speed to use
+                  within this range.
+  current CPU frequency: Unable to call hardware
+  current CPU frequency: 1.25 GHz (asserted by call to kernel)
+  boost state support:
+    Supported: yes
+    Active: yes
+</pre>
+
+<p>
+Here's my CPU's specification on Intel page:  <a href="https://ark.intel.com/content/www/us/en/ark/products/208921/intel-core-i71165g7-processor-12m-cache-up-to-4-70-ghz-with-ipu.html">https://ark.intel.com/content/www/us/en/ark/products/208921/intel-core-i71165g7-processor-12m-cache-up-to-4-70-ghz-with-ipu.html</a>
+</p>
+</div>
+</div>
+
+<div id="outline-container-org4df2ed9" class="outline-4">
+<h4 id="org4df2ed9"><span class="section-number-4">2.2.2.</span> Conclusions:</h4>
+<div class="outline-text-4" id="text-2-2-2">
+<p>
+So a 4.65GHz clock speed is within plausible results but that would mean that:
+</p>
+<ol class="org-ol">
+<li>Top CPU speed range advertised by Intel is actually reachable</li>
+<li>A compact laptop with questionable heat tolerance can sustain top CPU speed for 2 minutes</li>
+</ol>
+
+<p>
+This might be true, especially because NOPs don't need a lot of power power to run but I tend to not believe vendor-advertised top specs.
+</p>
+
+<p>
+Maybe my CPU can execute 5 or 6 NOPs in parallel?
+</p>
+
+<p>
+Let's fix the frequency at some low value and have a look at results.
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org6022105" class="outline-3">
+<h3 id="org6022105"><span class="section-number-3">2.3.</span> Running it at fixed 1GHz speed</h3>
+<div class="outline-text-3" id="text-2-3">
+<div class="org-src-container">
+<pre class="src src-bash" id="org0e426d7">sudo cpupower -c 0 frequency-set --min 1000MHz --max 1000MHz
+cpupower -c 0 frequency-info
+taskset 1 time ./main 2&gt;&amp;1
+</pre>
+</div>
+
+<pre class="example" id="org9cb5c10">
+Setting cpu: 0
+analyzing CPU 0:
+  driver: intel_pstate
+  CPUs which run at the same hardware frequency: 0
+  CPUs which need to have their frequency coordinated by software: 0
+  maximum transition latency:  Cannot determine or is not supported.
+  hardware limits: 400 MHz - 4.70 GHz
+  available cpufreq governors: performance powersave
+  current policy: frequency should be within 1000 MHz and 1000 MHz.
+                  The governor "performance" may decide which speed to use
+                  within this range.
+  current CPU frequency: Unable to call hardware
+  current CPU frequency: 2.35 GHz (asserted by call to kernel)
+  boost state support:
+    Supported: yes
+    Active: yes
+511.81user 0.03system 8:32.55elapsed 99%CPU (0avgtext+0avgdata 244maxresident)k
+0inputs+0outputs (0major+13minor)pagefaults 0swaps
+</pre>
+</div>
+
+<div id="outline-container-orgb29785d" class="outline-4">
+<h4 id="orgb29785d"><span class="section-number-4">2.3.1.</span> Result analysis</h4>
+<div class="outline-text-4" id="text-2-3-1">
+<ol class="org-ol">
+<li><p>
+Frequency artifacts
+</p>
+
+<p>
+The same command says that <code>frequency should be within 1000 MHz and
+   1000 MHz.</code> and <code>current CPU frequency: 2.35 GHz (asserted by call
+   to kernel)</code>. What do I make out of this?
+</p>
+
+<p>
+I ran the command a couple of more times and got various results while the core was <b>idle</b>:
+1.65GHz, 1.56GHz, 1.31GHz, 1.12GHz. It looks like the CPU does what it wants.
+</p>
+
+<p>
+From some source I can't remember now I remember that sampling
+frequency once will not give precise results. You need to sample it
+a couple of times and run some statistics to get meaningful
+results.
+</p></li>
+
+<li><p>
+Frequency is actually pretty stable
+</p>
+
+<p>
+During the benchmark I ran <code>while sleep 2; do cpupower monitor;
+   done</code> to monitor whether core 0 frequency is actually around 1GHz. I got something like that:
+</p>
+<pre class="example" id="org9691ae9">
+   | Nehalem                    || Mperf               || Idle_Stats
+CPU| C3   | C6   | PC3  | PC6   || C0   | Cx   | Freq  || POLL | C1_A | C2_A | C3_A
+  0|  0.00|  0.00|  0.00|  0.00|| 99.60|  0.40|  1014||  0.00|  0.00|  0.00|  0.00
+  1|  0.00|  0.00|  0.00|  0.00||  0.60| 99.40|  2331||  0.00|  0.04|  7.08| 92.26
+  2|  0.00|  0.00|  0.00|  0.00||  0.30| 99.70|   855||  0.00|  0.04|  0.21| 99.46
+  3|  0.00|  0.00|  0.00|  0.00||  0.53| 99.47|   859||  0.00|  0.06|  3.00| 96.43
+  4|  0.00|  0.00|  0.00|  0.00||  0.75| 99.25|   909||  0.00|  0.13|  3.64| 95.50
+  5|  0.00|  0.00|  0.00|  0.00||  0.74| 99.26|   858||  0.00|  0.44|  2.93| 95.93
+  6|  0.00|  0.00|  0.00|  0.00||  0.26| 99.74|   882||  0.00|  0.10|  0.00| 99.65
+  7|  0.00|  0.00|  0.00|  0.00||  0.43| 99.57|   910||  0.00|  0.78|  0.70| 98.12
+</pre>
+
+<p>
+It looked like core #0 was consistently clocking around 1GHz while under sustained load.
+</p>
+
+<p>
+An interesting detail is that core #1 is clocking at over
+2GHz. We've got hyperthreading so core #0 is tied to core #1. It
+might be that frequency scaler sees that there's a high demand on
+CPU power and ramps up the CPU speed, but core #0 has a very
+limited speed.  Note that thread #0 is busy and thread #1 is idle
+(C0 means "busy", Cx means "idle", as per <a href="https://github.com/torvalds/linux/blob/d888c83fcec75194a8a48ccd283953bdba7b2550/tools/power/cpupower/utils/idle_monitor/mperf_monitor.c#L38-L61=">linux source code</a>).
+</p></li>
+
+<li># of NOPs / time</li>
+</ol>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-left" />
+
+<col  class="org-left" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-left">What</th>
+<th scope="col" class="org-left">How to calculate</th>
+<th scope="col" class="org-right">Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-left">Instructions</td>
+<td class="org-left">2048 * 1048576000</td>
+<td class="org-right">2147483648000</td>
+</tr>
+
+<tr>
+<td class="org-left">Time[s]</td>
+<td class="org-left">time(1)</td>
+<td class="org-right">511.81</td>
+</tr>
+
+<tr>
+<td class="org-left">NOPs/s/4</td>
+<td class="org-left">&#xa0;</td>
+<td class="org-right">1048965300</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<div id="outline-container-org089527a" class="outline-4">
+<h4 id="org089527a"><span class="section-number-4">2.3.2.</span> Conclusions</h4>
+<div class="outline-text-4" id="text-2-3-2">
+<p>
+it looks like we clocked on average a little over 1GHz and indeed we can still run 4 NOPs per second.
+</p>
+
+<p>
+So indeed, two conclusions in the previous benchmaks proved to be true!
+</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="date">Date: 2022-03-30</p>
+<p class="author">Author: Krzysztof Piecuch</p>
+<p class="date">Created: 2022-03-30 śro 18:34</p>
+<p class="validation"><a href="https://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>
