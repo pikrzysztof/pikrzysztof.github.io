@@ -1,0 +1,127 @@
+#+TITLE: Using luks/cryptsetup and loopdevices to create encrypted containers
+#+AUTHOR: Krzysztof Piecuch
+#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
+
+* Creating the container
+
+We need to create a file, encrypt it and format. I use =fallocate= because it may be faster than =dd=, as it uses a special syscall.
+#+NAME: initialized container
+#+begin_src bash :results verbatim
+  exec 2>&1
+  set -x
+  fallocate -l 1G /tmp/container
+  dev=$(sudo losetup --find --show /tmp/container)
+  head -c 5000 /dev/urandom > /tmp/container-pwd
+  sudo cryptsetup luksFormat --type luks2 "$dev" /tmp/container-pwd
+  sudo cryptsetup open --type luks2 "$dev" container-luks --key-file /tmp/container-pwd
+  lsblk
+  sudo mkfs.ext4 /dev/mapper/container-luks
+  sudo cryptsetup close container-luks
+
+  :
+#+end_src
+
+#+RESULTS: initialized container
+#+begin_example
++ fallocate -l 1G /tmp/container
+++ sudo losetup --find --show /tmp/container
++ dev=/dev/loop0
++ head -c 5000 /dev/urandom
++ sudo cryptsetup luksFormat --type luks2 /dev/loop0 /tmp/container-pwd
++ sudo cryptsetup open --type luks2 /dev/loop0 container-luks --key-file /tmp/container-pwd
++ lsblk
+NAME             MAJ:MIN RM  SIZE RO TYPE  MOUNTPOINTS
+loop0              7:0    0    1G  0 loop
+└─container-luks 254:0    0 1008M  0 crypt
+zd0              230:0    0   20G  0 disk  /var/lib/docker
+nvme0n1          259:0    0  1.8T  0 disk
+├─nvme0n1p1      259:1    0  512M  0 part  /efi
+├─nvme0n1p2      259:2    0  512M  0 part  /boot
+├─nvme0n1p3      259:3    0  700G  0 part
+├─nvme0n1p4      259:4    0  200G  0 part
+├─nvme0n1p5      259:5    0   16M  0 part
+└─nvme0n1p6      259:6    0  195G  0 part
+nvme1n1          259:7    0  1.8T  0 disk
+├─nvme1n1p1      259:8    0  512M  0 part
+├─nvme1n1p2      259:9    0  512M  0 part
+└─nvme1n1p3      259:10   0  700G  0 part
++ sudo mkfs.ext4 /dev/mapper/container-luks
+mke2fs 1.46.5 (30-Dec-2021)
+Creating filesystem with 258048 4k blocks and 64512 inodes
+Filesystem UUID: 0ed2c690-97e4-46ed-8c1a-bf8db5667400
+Superblock backups stored on blocks:
+	32768, 98304, 163840, 229376
+
+Allocating group tables: 0/8   done
+Writing inode tables: 0/8   done
+Creating journal (4096 blocks): done
+Writing superblocks and filesystem accounting information: 0/8   done
+
++ sudo cryptsetup close container-luks
++ :
+#+end_example
+Now, =/tmp/container= is an encrypted file which (after decryption) is formatted with ext4.
+
+* Mounting the container for work
+
+We can't mount an ordinary file - we need to create a /dev entry for it. losetup handles that by creating virtual devices. Then we decrypt the file with cryptsetup and mount an ext4 partition
+#+NAME: mount container for work
+#+begin_src bash :results verbatim
+  exec 2>&1
+  set -x
+  dev=$(sudo losetup --find --show /tmp/container)
+  sudo cryptsetup open --type luks2 "$dev" container-luks --key-file /tmp/container-pwd
+  sudo mount /dev/mapper/container-luks /mnt
+  :
+#+end_src
+
+#+RESULTS: mount container for work
+#+begin_example
+++ sudo losetup --find --show /tmp/container
++ dev=/dev/loop1
++ sudo cryptsetup open --type luks2 /dev/loop1 container-luks --key-file /tmp/container-pwd
++ sudo mount /dev/mapper/container-luks /mnt
++ :
+#+end_example
+
+* Unmounting the partition after work.
+Linux will handle that on shutdown but you can do it manually. Crafting =jq= invocation took most of the time.
+#+NAME: umount container after work
+#+begin_src bash :results verbatim
+  exec 2>&1
+  set -x
+  sudo umount /mnt
+  sudo cryptsetup close container-luks
+  dev=$(losetup -l -J | jq --raw-output '.loopdevices | map(select(."back-file" == "/tmp/container"))[0] | .name')
+  sudo losetup -d "$dev"
+  :
+#+end_src
+
+#+RESULTS: umount container after work
+#+begin_example
++ sudo umount /mnt
++ sudo cryptsetup close container-luks
+++ losetup -l -J
+++ jq --raw-output '.loopdevices | map(select(."back-file" == "/tmp/container"))[0] | .name'
++ dev=/dev/loop1
++ sudo losetup -d /dev/loop1
++ :
+#+end_example
+
+* Removing the container
+That's as easy as removing the files.
+
+#+NAME: cleanup loopdev
+#+begin_src bash :results verbatim
+  exec 2>&1
+  set -x
+  # find the loopdev which mapped container
+  rm /tmp/container /tmp/container-pwd
+  :
+#+end_src
+
+#+RESULTS: cleanup loopdev
+#+begin_example
++ rm /tmp/container /tmp/container-pwd
++ :
+#+end_example
