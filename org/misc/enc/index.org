@@ -1,6 +1,6 @@
 #+TITLE: Using luks/cryptsetup and loopdevices to create encrypted containers
 #+AUTHOR: Krzysztof Piecuch
-#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
+#+SETUPFILE: https://blog.kpiecuch.pl/css/theme-readtheorg.setup
 
 * Creating the container
 

@@ -1,7 +1,7 @@
 #+AUTHOR: Krzysztof Piecuch
 #+TITLE: Measuring CPU clock speed with NOPs and time(1)
 #+DATE: 2022-03-30
-#+SETUPFILE: https://fniessen.github.io/org-html-themes/org/theme-readtheorg.setup
+#+SETUPFILE: https://blog.kpiecuch.pl/css/theme-readtheorg.setup
 
 * Introduction
 [[https://brendangregg.com/blog/2014-04-26/the-noploop-cpu-benchmark.html][Brendan Gregg published]] a simple CPU benchmark for checking your cpu speed. I decided to give it a go and see for myself. Even for a simple thing like that it turned out a little different than I expected.
