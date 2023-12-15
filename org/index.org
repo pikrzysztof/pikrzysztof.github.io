@@ -1,2 +1,2 @@
 * Benchmarks & performance analysis
-  - [[benchmars/nop/index.html][Measuring CPU clock speed by running nops]]
+  - [[benchmarks/nop/index.html][Measuring CPU clock speed by running nops]]
