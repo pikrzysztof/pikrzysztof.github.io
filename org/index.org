@@ -1,4 +1,0 @@
-* Benchmarks & performance analysis
-  - [[benchmarks/nop/index.html][Measuring CPU clock speed by running nops]]
-* Miscellaneous
-  - [[misc/enc/index.html][Using luks/cryptsetup and loopdevices to create encrypted containers]]
