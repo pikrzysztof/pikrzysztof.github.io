@@ -1,0 +1,474 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<!-- 2023-12-30 sob 21:58 -->
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Does hyperthreading make my NOPs go slower?</title>
+<meta name="author" content="Krzysztof Piecuch" />
+<meta name="generator" content="Org Mode" />
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/htmlize.css"/>
+<link rel="stylesheet" type="text/css" href="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/css/readtheorg.css"/>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/lib/js/jquery.stickytableheaders.min.js"></script>
+<script type="text/javascript" src="https://fniessen.github.io/org-html-themes/src/readtheorg_theme/js/readtheorg.js"></script>
+</head>
+<body>
+<div id="content" class="content">
+<h1 class="title">Does hyperthreading make my NOPs go slower?</h1>
+<div id="table-of-contents" role="doc-toc">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents" role="doc-toc">
+<ul>
+<li><a href="#org9dc550b">1. Introduction</a></li>
+<li><a href="#org2c3f258">2. Benchmark</a></li>
+<li><a href="#org9d90914">3. Code</a></li>
+<li><a href="#orga78d85c">4. Running our benchmark</a></li>
+<li><a href="#org1f3906b">5. Benchmark results</a></li>
+<li><a href="#orgb5ed37c">6. Data analysis</a></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org9dc550b" class="outline-2">
+<h2 id="org9dc550b"><span class="section-number-2">1.</span> Introduction</h2>
+<div class="outline-text-2" id="text-1">
+<p>
+We'll see if executing NOPs on two hyperthreads at the same time makes
+them finish any faster. This might be an interesting idea in itself,
+but we'll also introduce some statistical analysis of
+results. Otherwise, you can't really tell what your experiment data
+means.
+</p>
+</div>
+</div>
+<div id="outline-container-org2c3f258" class="outline-2">
+<h2 id="org2c3f258"><span class="section-number-2">2.</span> Benchmark</h2>
+</div>
+<div id="outline-container-org9d90914" class="outline-2">
+<h2 id="org9d90914"><span class="section-number-2">3.</span> Code</h2>
+<div class="outline-text-2" id="text-3">
+<p>
+Code is the same as in our <a href="https://blog.kpiecuch.pl/benchmarks/nop/#org244818b">previous experiment</a>, but with lower constants:
+</p>
+<div class="org-src-container">
+<pre class="src src-asm" id="orge232c4d"><span style="font-weight: bold;">section</span> .text
+<span style="font-weight: bold;">global</span> _start
+<span style="font-weight: bold;">SYS_EXIT</span> <span style="font-weight: bold;">equ</span> 1
+<span style="font-weight: bold;">ARG</span> <span style="font-weight: bold;">equ</span> 104857600
+
+<span style="font-weight: bold;">_start</span>:
+        <span style="font-weight: bold;">mov</span> eax, ARG   <span style="font-weight: bold; font-style: italic;">; </span><span style="font-weight: bold; font-style: italic;">store the number of loops in the register</span>
+<span style="font-weight: bold;">loop</span>:   <span style="font-weight: bold;">nop</span>            <span style="font-weight: bold; font-style: italic;">; </span><span style="font-weight: bold; font-style: italic;">do nothing, burn cycles</span>
+        <span style="font-weight: bold;">nop</span>
+        <span style="font-weight: bold;">nop</span>
+<span style="font-weight: bold; font-style: italic;">;       </span><span style="font-weight: bold; font-style: italic;">&lt;snip&gt;  ;total of 2048 NOPs</span>
+        <span style="font-weight: bold;">nop</span>
+        <span style="font-weight: bold;">add</span> eax, -1     <span style="font-weight: bold; font-style: italic;">; </span><span style="font-weight: bold; font-style: italic;">subtract 1 from loop counter</span>
+        <span style="font-weight: bold;">cmp</span> eax, 0      <span style="font-weight: bold; font-style: italic;">; </span><span style="font-weight: bold; font-style: italic;">test if loop counter is 0</span>
+        <span style="font-weight: bold;">jne</span> loop        <span style="font-weight: bold; font-style: italic;">; </span><span style="font-weight: bold; font-style: italic;">go back to the nops if not finished</span>
+<span style="font-weight: bold;">end</span>:    <span style="font-weight: bold;">mov</span> eax, SYS_EXIT       <span style="font-weight: bold; font-style: italic;">; </span><span style="font-weight: bold; font-style: italic;">we want exit(2)</span>
+        <span style="font-weight: bold;">int</span> 0x80                <span style="font-weight: bold; font-style: italic;">; </span><span style="font-weight: bold; font-style: italic;">we want it now</span>
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-orga78d85c" class="outline-2">
+<h2 id="orga78d85c"><span class="section-number-2">4.</span> Running our benchmark</h2>
+<div class="outline-text-2" id="text-4">
+<p>
+But first, which logical CPUs are located on the same core?
+</p>
+<div class="org-src-container">
+<pre class="src src-bash" id="org518bc0c">cat /proc/cpuinfo | grep -Ee <span style="font-style: italic;">'^processor'</span> -e <span style="font-style: italic;">'^core id'</span>
+</pre>
+</div>
+
+<p>
+As we can see, logical CPU 0 is using the same core as logical CPU 1, logical CPU 2 is sharing core with CPU 3 and so on.
+</p>
+
+<p>
+So running it without hyperthreading:
+</p>
+<div class="org-src-container">
+<pre class="src src-bash">taskset --cpu-list 0 time ./main &amp;; taskset --cpu-list 2 time ./main;
+</pre>
+</div>
+
+<p>
+Runnig it by enforcing hyperthreading:
+</p>
+<div class="org-src-container">
+<pre class="src src-bash">taskset --cpu-list 0 time ./main &amp;; taskset --cpu-list 1 time ./main;
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org1f3906b" class="outline-2">
+<h2 id="org1f3906b"><span class="section-number-2">5.</span> Benchmark results</h2>
+<div class="outline-text-2" id="text-5">
+<p>
+Userspace time in seconds spent on-cpu. The times are grouped into
+pairs, as we get two times in every trial. We'll disregard this
+grouping in our analysis later.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="org-right" />
+
+<col  class="org-right" />
+</colgroup>
+<thead>
+<tr>
+<th scope="col" class="org-right">With hyperthreading</th>
+<th scope="col" class="org-right">Without Hyperthreading</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="org-right">31.17</td>
+<td class="org-right">11.53</td>
+</tr>
+
+<tr>
+<td class="org-right">31.10</td>
+<td class="org-right">11.54</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-right">31.20</td>
+<td class="org-right">11.54</td>
+</tr>
+
+<tr>
+<td class="org-right">31.19</td>
+<td class="org-right">11.54</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-right">31.12</td>
+<td class="org-right">11.54</td>
+</tr>
+
+<tr>
+<td class="org-right">30.96</td>
+<td class="org-right">11.55</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-right">31.08</td>
+<td class="org-right">11.54</td>
+</tr>
+
+<tr>
+<td class="org-right">30.85</td>
+<td class="org-right">11.55</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-right">31.18</td>
+<td class="org-right">11.53</td>
+</tr>
+
+<tr>
+<td class="org-right">31.17</td>
+<td class="org-right">11.54</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-right">31.19</td>
+<td class="org-right">11.53</td>
+</tr>
+
+<tr>
+<td class="org-right">31.15</td>
+<td class="org-right">11.54</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-right">31.20</td>
+<td class="org-right">11.55</td>
+</tr>
+
+<tr>
+<td class="org-right">31.18</td>
+<td class="org-right">11.54</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-right">31.20</td>
+<td class="org-right">11.69</td>
+</tr>
+
+<tr>
+<td class="org-right">31.17</td>
+<td class="org-right">11.56</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-right">31.18</td>
+<td class="org-right">11.54</td>
+</tr>
+
+<tr>
+<td class="org-right">31.17</td>
+<td class="org-right">11.55</td>
+</tr>
+</tbody>
+<tbody>
+<tr>
+<td class="org-right">-</td>
+<td class="org-right">11.57</td>
+</tr>
+
+<tr>
+<td class="org-right">-</td>
+<td class="org-right">11.56</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+I collected more samples for one of the cases, to demonstrate that we
+do not need to have an equal sample size.
+</p>
+
+<p>
+This benchmark doesn't make hyperthreading look very good! I presume it would be
+faster to run our nops sequentially! Let's see if statistics can support this idea.
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgb5ed37c" class="outline-2">
+<h2 id="orgb5ed37c"><span class="section-number-2">6.</span> Data analysis</h2>
+<div class="outline-text-2" id="text-6">
+<p>
+Now, how can we tell if there's really a performance difference between these two setups?
+</p>
+
+<p>
+The standard way would be to pass the data through:
+</p>
+
+<ul class="org-ul">
+<li>Welch's t-test which tells "with probability X these two groups of
+samples come from different normal distributions"</li>
+<li>Cohen's d which tells "there's that many standard deviations of
+difference beteween provided distributions.</li>
+</ul>
+
+<p>
+I find them not very useful since it's hard for me to reason in terms
+of standard deviations. We'll resort to statistical methods which:
+</p>
+
+<ul class="org-ul">
+<li>assume that the runtime difference is always the same</li>
+<li>but the execution and measurement is noisy</li>
+<li>so it'll give us a credible interval where the fixed difference is
+supposed to be with some probability.</li>
+</ul>
+
+<p>
+This can be achieved by the following python script. The concept is
+quite simple - we subtract distributions from each other and get a
+distribution in return. The credible interval is then the most
+probable section of the resulting distribution. When calculating we're
+getting a yes/no answer to the question "is hyperthreading slower than
+no-hyperthreading execution". For full understanding on why it does
+what we want I'd suggest reading through the book.
+</p>
+
+<div class="org-src-container">
+<pre class="src src-python"><span style="font-weight: bold; font-style: italic;">#</span><span style="font-weight: bold; font-style: italic;">!/usr/bin/env python3</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Snippets and ideas taken from "Think Bayes Bayesian Statistics in Python" by Allen B. Downey</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">https://github.com/AllenDowney/empiricaldist/blob/master/empiricaldist/empiricaldist.py</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">Based on chapter 11 and chapter 13 of the book.</span>
+<span style="font-weight: bold;">import</span> matplotlib.pyplot <span style="font-weight: bold;">as</span> plt
+<span style="font-weight: bold;">import</span> numpy <span style="font-weight: bold;">as</span> np
+<span style="font-weight: bold;">import</span> pandas <span style="font-weight: bold;">as</span> pd
+<span style="font-weight: bold;">from</span> scipy.stats <span style="font-weight: bold;">import</span> gaussian_kde, norm
+
+<span style="font-weight: bold;">from</span> empiricaldist <span style="font-weight: bold;">import</span> Pmf
+
+<span style="font-weight: bold; font-style: italic;">data_noht</span> = [
+    11.53,
+    11.54,
+    11.54,
+    11.54,
+    11.54,
+    11.55,
+    11.54,
+    11.55,
+    11.53,
+    11.54,
+    11.53,
+    11.54,
+    11.55,
+    11.54,
+    11.69,
+    11.56,
+    11.54,
+    11.55,
+    11.57,
+    11.56,
+]
+
+<span style="font-weight: bold; font-style: italic;">data_ht</span> = [
+    31.17,
+    31.10,
+    31.20,
+    31.19,
+    31.12,
+    30.96,
+    31.08,
+    30.85,
+    31.18,
+    31.17,
+    31.19,
+    31.15,
+    31.20,
+    31.18,
+    31.20,
+    31.17,
+    31.18,
+    31.17,
+]
+
+
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">make_uniform</span>(qs: np.array, name: <span style="font-weight: bold;">str</span>) -&gt; Pmf:
+    <span style="font-weight: bold; font-style: italic;">pmf</span> = Pmf(1.0, qs)
+    pmf.normalize()
+    pmf.index.<span style="font-weight: bold; font-style: italic;">name</span> = name
+    <span style="font-weight: bold;">return</span> pmf
+
+
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">make_joint</span>(pmf1, pmf2) -&gt; pd.DataFrame:
+    <span style="font-style: italic;">"""Compute the outer product of two Pmfs"""</span>
+    <span style="font-weight: bold; font-style: italic;">X</span>, <span style="font-weight: bold; font-style: italic;">Y</span> = np.meshgrid(pmf1, pmf2)
+    <span style="font-weight: bold;">return</span> pd.DataFrame(X * Y, columns=pmf1.qs, index=pmf2.qs)
+
+
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">normalize</span>(joint):
+    <span style="font-style: italic;">"""Normalize a joint distribution"""</span>
+    <span style="font-weight: bold; font-style: italic;">prob_data</span> = joint.to_numpy().<span style="font-weight: bold;">sum</span>()
+    <span style="font-weight: bold; font-style: italic;">joint</span> /= prob_data
+    <span style="font-weight: bold;">return</span> prob_data
+
+
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">update_norm</span>(prior, data):
+    <span style="font-style: italic;">"""Update the prior based on data."""</span>
+    <span style="font-weight: bold; font-style: italic;">mu_mesh</span>, <span style="font-weight: bold; font-style: italic;">sigma_mesh</span>, <span style="font-weight: bold; font-style: italic;">data_mesh</span> = np.meshgrid(prior.columns, prior.index, data)
+    <span style="font-weight: bold; font-style: italic;">densities</span> = norm(mu_mesh, sigma_mesh).pdf(data_mesh)
+    <span style="font-weight: bold; font-style: italic;">likelihood</span> = densities.prod(axis=2)
+    <span style="font-weight: bold; font-style: italic;">posterior</span> = prior * likelihood
+    normalize(posterior)
+    <span style="font-weight: bold;">return</span> posterior
+
+
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">marginal</span>(joint, axis):
+    <span style="font-style: italic;">"""Compute a marginal distribution."""</span>
+    <span style="font-weight: bold;">return</span> Pmf(joint.<span style="font-weight: bold;">sum</span>(axis=axis))
+
+
+<span style="font-weight: bold;">def</span> <span style="font-weight: bold;">kde_from_pmf</span>(pmf, n=101):
+    <span style="font-style: italic;">"""Make a kernel density estimae for a new PMF."""</span>
+    <span style="font-weight: bold; font-style: italic;">kde</span> = gaussian_kde(pmf.qs, weights=pmf.ps)
+    <span style="font-weight: bold; font-style: italic;">qs</span> = np.linspace(pmf.qs.<span style="font-weight: bold;">min</span>(), pmf.qs.<span style="font-weight: bold;">max</span>(), n)
+    <span style="font-weight: bold; font-style: italic;">ps</span> = kde.evaluate(qs)
+    <span style="font-weight: bold; font-style: italic;">pmf</span> = Pmf(ps, qs)
+    pmf.normalize()
+    <span style="font-weight: bold;">return</span> pmf
+
+
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">WARNING: the span described by start, stop arguments can't be too big - otherwise you'll get /0 errors.</span>
+<span style="font-weight: bold; font-style: italic;">qs</span> = np.linspace(5, 35, num=101)
+<span style="font-weight: bold; font-style: italic;">prior_mu</span> = make_uniform(qs, name=<span style="font-style: italic;">"mean no hyperthreading"</span>)
+
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">WARNING: the span described by start, stop arguments can't be too big - otherwise you'll get /0 errors.</span>
+<span style="font-weight: bold; font-style: italic;">qs</span> = np.linspace(5, 35, num=101)
+<span style="font-weight: bold; font-style: italic;">prior_sigma</span> = make_uniform(qs, name=<span style="font-style: italic;">"std no hyperthreading"</span>)
+
+<span style="font-weight: bold; font-style: italic;">prior</span> = make_joint(prior_mu, prior_sigma)
+<span style="font-weight: bold; font-style: italic;">posterior_noht</span> = update_norm(prior, data_noht)
+<span style="font-weight: bold; font-style: italic;">posterior_ht</span> = update_norm(prior, data_ht)
+<span style="font-weight: bold; font-style: italic;">pmf_mean_ht</span> = marginal(posterior_ht, 0)
+<span style="font-weight: bold; font-style: italic;">pmf_mean_noht</span> = marginal(posterior_noht, 0)
+<span style="font-weight: bold; font-style: italic;">prob_gt</span> = Pmf.prob_gt(pmf_mean_ht, pmf_mean_noht)
+<span style="font-weight: bold;">print</span>(f<span style="font-style: italic;">"Hyperthreading version is slower with probability of </span>{prob_gt:.2f}<span style="font-style: italic;">."</span>)
+<span style="font-weight: bold; font-style: italic;">pmf_diff</span> = Pmf.sub_dist(pmf_mean_ht, pmf_mean_noht)
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">plot stuff if needed</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">pmf_diff.bar()</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">plt.show()</span>
+<span style="font-weight: bold; font-style: italic;">cdf_diff</span> = pmf_diff.make_cdf()
+<span style="font-weight: bold; font-style: italic;">kde_diff</span> = kde_from_pmf(pmf_diff)
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">plot smoothed out graph if needed</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">kde_diff.bar()</span>
+<span style="font-weight: bold; font-style: italic;"># </span><span style="font-weight: bold; font-style: italic;">plt.show()</span>
+<span style="font-weight: bold; font-style: italic;">mean_diff</span> = pmf_diff.mean()
+<span style="font-weight: bold; font-style: italic;">credible_intvl</span> = pmf_diff.credible_interval(0.95)
+<span style="font-weight: bold;">print</span>(
+    f<span style="font-style: italic;">"Hyperthreading version is on average </span>{mean_diff:.2f}<span style="font-style: italic;">s slower than no-HT version."</span>
+    f<span style="font-style: italic;">" With 95% probability no-HT version is faster than HT version by a value between </span>{credible_intvl[0]}<span style="font-style: italic;"> and </span>{credible_intvl[1]}<span style="font-style: italic;"> seconds."</span>
+)
+</pre>
+</div>
+
+<p>
+The code calculates distribution of differences between runtimes
+</p>
+
+
+<div id="org88dca8a" class="figure">
+<p><img src="./diff_distribution.png" alt="diff_distribution.png" />
+</p>
+</div>
+
+<p>
+and smoothes it out:
+</p>
+
+
+<div id="orged49902" class="figure">
+<p><img src="./diff_distribution_smooth.png" alt="diff_distribution_smooth.png" />
+</p>
+</div>
+
+<p>
+which is then used to calculate what we need and report the results:
+</p>
+<blockquote>
+<p>
+Hyperthreading version is slower with probability of 1.00.
+</p>
+
+<p>
+Hyperthreading version is on average 19.58s slower than no-HT version. With 95% probability no-HT version is faster than HT version by a value between 16.2 and 22.8 seconds.
+</p>
+</blockquote>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="date">Date: 2022-03-30</p>
+<p class="author">Author: Krzysztof Piecuch</p>
+<p class="date">Created: 2023-12-30 sob 21:58</p>
+<p class="validation"><a href="https://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>

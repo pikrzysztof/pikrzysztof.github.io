@@ -1,0 +1,161 @@
+#+AUTHOR: Krzysztof Piecuch
+#+TITLE: Does hyperthreading make my NOPs go slower?
+#+DATE: 2022-03-30
+#+SETUPFILE: https://blog.kpiecuch.pl/css/theme-readtheorg.setup
+* Introduction
+We'll see if executing NOPs on two hyperthreads at the same time makes
+them finish any faster. This might be an interesting idea in itself,
+but we'll also introduce some statistical analysis of
+results. Otherwise, you can't really tell what your experiment data
+means.
+* Benchmark
+* Code
+#+LABEL: benchmark_code
+Code is the same as in our [[https://blog.kpiecuch.pl/benchmarks/nop/#org244818b][previous experiment]], but with lower constants:
+#+NAME: noploop source code
+#+begin_src asm
+  section .text
+  global _start
+  SYS_EXIT equ 1
+  ARG equ 104857600
+
+  _start:
+	  mov eax, ARG   ; store the number of loops in the register
+  loop:   nop	       ; do nothing, burn cycles
+	  nop
+	  nop
+  ;       <snip>	;total of 2048 NOPs
+	  nop
+	  add eax, -1	; subtract 1 from loop counter
+	  cmp eax, 0	; test if loop counter is 0
+	  jne loop	; go back to the nops if not finished
+  end:    mov eax, SYS_EXIT	; we want exit(2)
+	  int 0x80		; we want it now
+#+end_src
+* Running our benchmark
+But first, which logical CPUs are located on the same core?
+#+NAME: getting HT information
+#+begin_src bash :results verbatim
+cat /proc/cpuinfo | grep -Ee '^processor' -e '^core id'
+#+end_src
+
+#+RESULTS: getting HT information
+#+begin_example
+processor	: 0
+core id		: 0
+processor	: 1
+core id		: 0
+processor	: 2
+core id		: 1
+processor	: 3
+core id		: 1
+processor	: 4
+core id		: 2
+processor	: 5
+core id		: 2
+processor	: 6
+core id		: 3
+processor	: 7
+core id		: 3
+#+end_example
+
+As we can see, logical CPU 0 is using the same core as logical CPU 1, logical CPU 2 is sharing core with CPU 3 and so on.
+
+So running it without hyperthreading:
+#+begin_src bash
+  taskset --cpu-list 0 time ./main &; taskset --cpu-list 2 time ./main;
+#+end_src
+
+Runnig it by enforcing hyperthreading:
+#+begin_src bash
+  taskset --cpu-list 0 time ./main &; taskset --cpu-list 1 time ./main;
+#+end_src
+* Benchmark results
+
+Userspace time in seconds spent on-cpu. The times are grouped into
+pairs, as we get two times in every trial. We'll disregard this
+grouping in our analysis later.
+
+| With hyperthreading | Without Hyperthreading |
+|---------------------+------------------------|
+|               31.17 |                  11.53 |
+|               31.10 |                  11.54 |
+|---------------------+------------------------|
+|               31.20 |                  11.54 |
+|               31.19 |                  11.54 |
+|---------------------+------------------------|
+|               31.12 |                  11.54 |
+|               30.96 |                  11.55 |
+|---------------------+------------------------|
+|               31.08 |                  11.54 |
+|               30.85 |                  11.55 |
+|---------------------+------------------------|
+|               31.18 |                  11.53 |
+|               31.17 |                  11.54 |
+|---------------------+------------------------|
+|               31.19 |                  11.53 |
+|               31.15 |                  11.54 |
+|---------------------+------------------------|
+|               31.20 |                  11.55 |
+|               31.18 |                  11.54 |
+|---------------------+------------------------|
+|               31.20 |                  11.69 |
+|               31.17 |                  11.56 |
+|---------------------+------------------------|
+|               31.18 |                  11.54 |
+|               31.17 |                  11.55 |
+|---------------------+------------------------|
+|                   - |                  11.57 |
+|                   - |                  11.56 |
+|---------------------+------------------------|
+
+I collected more samples for one of the cases, to demonstrate that we
+do not need to have an equal sample size.
+
+This benchmark doesn't make hyperthreading look very good! I presume it would be
+faster to run our nops sequentially! Let's see if statistics can support this idea.
+
+* Data analysis
+Now, how can we tell if there's really a performance difference between these two setups?
+
+The standard way would be to pass the data through:
+
+- Welch's t-test which tells "with probability X these two groups of
+  samples come from different normal distributions"
+- Cohen's d which tells "there's that many standard deviations of
+  difference beteween provided distributions.
+
+I find them not very useful since it's hard for me to reason in terms
+of standard deviations. We'll resort to statistical methods which:
+
+- assume that the runtime difference is always the same
+- but the execution and measurement is noisy
+- so it'll give us a credible interval where the fixed difference is
+  supposed to be with some probability.
+
+This can be achieved by the following python script. The concept is
+quite simple - we subtract distributions from each other and get a
+distribution in return. The credible interval is then the most
+probable section of the resulting distribution. When calculating we're
+getting a yes/no answer to the question "is hyperthreading slower than
+no-hyperthreading execution". For full understanding on why it does
+what we want I'd suggest reading through the book.
+
+#+include: "./bayes.py" src python
+
+The code calculates distribution of differences between runtimes
+
+#+ATTR_HTML: :width="400"
+[[file:./diff_distribution.png]]
+
+and smoothes it out:
+
+#+ATTR_HTML: :width="400"
+[[file:./diff_distribution_smooth.png]]
+
+which is then used to calculate what we need and report the results:
+#+begin_quote
+Hyperthreading version is slower with probability of 1.00.
+
+Hyperthreading version is on average 19.58s slower than no-HT version. With 95% probability no-HT version is faster than HT version by a value between 16.2 and 22.8 seconds.
+#+end_quote
